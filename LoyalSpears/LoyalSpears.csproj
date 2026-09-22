@@ -1,0 +1,83 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>LoyalSpears</AssemblyName>
+    <RootNamespace>LoyalSpears</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- Don't copy referenced DLLs into output; game provides them -->
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <!-- Suppress assembly resolution conflicts (MSB3243) caused by Unity meta-assembly
+         and module DLLs being loaded both directly and transitively -->
+    <NoWarn>$(NoWarn);MSB3243;MSB3245</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <ValheimDir>/mnt/games/steam/steamapps/common/Valheim/valheim_Data/Managed/</ValheimDir>
+    <DeployPath>/home/jorstar/.config/r2modmanPlus-local/Valheim/profiles/Development/BepInEx/plugins/</DeployPath>
+    <!-- Mod packaging settings -->
+    <ModName>LoyalSpears</ModName>
+    <ModDescription>Spears that are loyal - return on throw and do not get picked up by others.</ModDescription>
+    <ModWebsiteUrl>https://github.com/jorstar/ValheimLoyalSpears</ModWebsiteUrl>
+    <ModVersion>1.0.0</ModVersion>
+    <ModDependencies>denikson-BepInExPack_Valheim-5.4.2350,ValheimModding-Jotunn-2.30.2</ModDependencies>
+  </PropertyGroup>
+
+  <!-- Valheim / Unity assemblies -->
+  <ItemGroup>
+    <Reference Include="assembly_valheim">
+      <HintPath>$(ValheimDir)assembly_valheim.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="assembly_utils">
+      <HintPath>$(ValheimDir)assembly_utils.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(ValheimDir)UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(ValheimDir)UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>$(ValheimDir)UnityEngine.AudioModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(ValheimDir)UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(ValheimDir)UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>$(ValheimDir)Unity.TextMeshPro.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BepInEx.Core" Version="5.4.21" />
+    <PackageReference Include="BepInEx.PluginInfoProps" Version="2.1.0" />
+    <PackageReference Include="HarmonyX" Version="2.9.0" />
+    <PackageReference Include="JotunnLib" Version="2.30.2" />
+  </ItemGroup>
+
+  <!-- Deploy to r2modman Development profile -->
+  <Target Name="Deploy" AfterTargets="Build">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(DeployPath)" />
+    <Message Text="Deployed $(ModName).dll to $(DeployPath)" Importance="High" />
+  </Target>
+
+  <!-- Generate manifest.json and package mod as zip -->
+  <Target Name="PackageMod" AfterTargets="Build">
+    <Exec Command="bash $(MSBuildThisFileDirectory)../build/pack_mod.sh &quot;$(OutputPath)&quot; &quot;$(TargetPath)&quot; &quot;$(MSBuildThisFileDirectory)..&quot; &quot;$(ModName)&quot; &quot;$(ModVersion)&quot; &quot;$(ModWebsiteUrl)&quot; &quot;$(ModDescription)&quot; &quot;$(ModDependencies)&quot;" />
+  </Target>
+
+</Project>

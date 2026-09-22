@@ -1,0 +1,29 @@
+# Build output
+bin/
+obj/
+out
+
+# NuGet packages
+/packages/
+
+# Rider/IDE
+ riderModule.iml
+/.idea/
+/.vscode/
+/LoyalSpears.sln.DotSettings.user
+/_ReSharper.Caches/
+**/. ReSharper.user
+*.DotSettings.user
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts (zip packages, manifest.json) are generated output
+# and should not be committed
+LoyalSpears.zip
+bin/Debug/manifest.json
+bin/Release/manifest.json
+
+# BepInEx deploy artifacts (not project source)
+BepInEx/plugins/LoyalSpears.dll
