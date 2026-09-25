@@ -8,8 +8,8 @@ This is a Valheim 1.0+ port of the original [Loyal Spears](https://github.com/Go
 
 - **Auto-Return**: Thrown spears automatically return to their owner after landing, or after traveling too far.
 - **Owner-Only Pickup**: Prevent other players from auto-picking up your thrown spears.
-- **Never Lost**: A spear that can't come back yet (inventory full, mid-teleport) keeps retrying instead of giving up. Its owner is stored on the item itself, so it also comes back after you walk back into range, relog, or die and respawn.
-- **Original Slot**: A returning spear goes back to the inventory slot it was thrown from if that slot is still free, otherwise to any free slot.
+- **Never Lost**: A spear that can't come back yet (mid-teleport, out of range) keeps retrying instead of giving up. Its owner is stored on the item itself, so it also comes back after you walk back into range, relog, or die and respawn.
+- **Original Slot**: A returning spear always goes back to the inventory slot it was thrown from. Whatever took that slot is moved to another free slot, or dropped at your feet if your inventory is full.
 - **Weight and Slot Reservation**: Throws reserve carrying capacity and an inventory slot, so auto-pickup of loot can't overburden you or fill the slot your spear needs.
 - **Portal and Cave Safety**: Entering a portal or a dungeon/cave entrance pulls your thrown spears back first, while they are still loaded.
 - **Lifetime Rescue**: A spear that flies until it expires (or hits something vanilla won't drop it on) is returned instead of vanishing.

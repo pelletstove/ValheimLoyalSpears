@@ -62,9 +62,10 @@ internal static class SpearReturn
     }
 
     /// <summary>
-    /// Tries to put a dropped spear back into <paramref name="player"/>'s inventory, in the slot
-    /// it was thrown from if that slot is still free. Returns false if it has to wait (no room,
-    /// mid-teleport, dead, waiting on network ownership); the caller retries later.
+    /// Tries to put a dropped spear back into <paramref name="player"/>'s inventory, always in the
+    /// slot it was thrown from: whatever took that slot moves to another free slot, or is dropped
+    /// if the inventory is full. Returns false if it has to wait (mid-teleport, dead, waiting on
+    /// network ownership, slot held by an undroppable item); the caller retries later.
     /// </summary>
     public static bool TryReturn(ItemDrop drop, Player player)
     {
@@ -91,12 +92,6 @@ internal static class SpearReturn
         var item = drop.m_itemData;
         var inventory = SpearPatches.GetInventory(player);
 
-        if (!inventory.CanAddItem(item))
-        {
-            NotifyNoRoom(player, item);
-            return false;
-        }
-
         if (PluginConfig.BlockReturnIfOverburdened.Value && item.GetWeight() + inventory.GetTotalWeight() > player.GetMaxCarryWeight())
         {
             return false;
@@ -104,6 +99,23 @@ internal static class SpearReturn
 
         // AddItem picks the first empty slot, so remember where the spear lived before the throw
         Vector2i originalSlot = item.m_gridPos;
+
+        if (IsInside(inventory, originalSlot))
+        {
+            // the spear always gets its old slot back; whatever took it is moved or dropped
+            var occupant = inventory.GetItemAt(originalSlot.x, originalSlot.y);
+
+            if (occupant != null && !MakeRoom(player, inventory, occupant, item))
+            {
+                NotifyNoRoom(player, item);
+                return false;
+            }
+        }
+        else if (!inventory.CanAddItem(item))
+        {
+            NotifyNoRoom(player, item);
+            return false;
+        }
 
         if (!player.Pickup(drop.gameObject, autoequip: true, autoPickupDelay: false))
         {
@@ -186,12 +198,7 @@ internal static class SpearReturn
     /// <summary>Moves <paramref name="item"/> to <paramref name="slot"/> if that slot is empty.</summary>
     private static void RestoreSlot(Inventory inventory, ItemDrop.ItemData item, Vector2i slot)
     {
-        if (item.m_gridPos == slot || !inventory.ContainsItem(item))
-        {
-            return;
-        }
-
-        if (slot.x < 0 || slot.y < 0 || slot.x >= inventory.GetWidth() || slot.y >= inventory.GetHeight())
+        if (item.m_gridPos == slot || !inventory.ContainsItem(item) || !IsInside(inventory, slot))
         {
             return;
         }
@@ -205,6 +212,38 @@ internal static class SpearReturn
         InventoryChanged.Invoke(inventory, new object[] { false, false });
     }
 
+    private static bool IsInside(Inventory inventory, Vector2i slot) =>
+        slot.x >= 0 && slot.y >= 0 && slot.x < inventory.GetWidth() && slot.y < inventory.GetHeight();
+
+    /// <summary>
+    /// Clears the spear's old slot: moves <paramref name="occupant"/> to another empty slot, or,
+    /// if the inventory is full, drops it at the player's feet. False if it can't be dropped
+    /// (quest items).
+    /// </summary>
+    private static bool MakeRoom(Player player, Inventory inventory, ItemDrop.ItemData occupant, ItemDrop.ItemData spear)
+    {
+        for (int y = 0; y < inventory.GetHeight(); y++)
+        {
+            for (int x = 0; x < inventory.GetWidth(); x++)
+            {
+                if (inventory.GetItemAt(x, y) == null)
+                {
+                    occupant.m_gridPos = new Vector2i(x, y);
+                    InventoryChanged.Invoke(inventory, new object[] { false, false });
+                    return true;
+                }
+            }
+        }
+
+        if (!player.DropItem(inventory, occupant, occupant.m_stack))
+        {
+            return false;
+        }
+
+        player.Message(MessageHud.MessageType.Center, $"Dropped {occupant.m_shared.m_name} to make room for your {spear.m_shared.m_name}");
+        return true;
+    }
+
     private static void NotifyNoRoom(Player player, ItemDrop.ItemData item)
     {
         if (Time.time < _nextNoRoomMessage)
@@ -214,6 +253,6 @@ internal static class SpearReturn
 
         _nextNoRoomMessage = Time.time + NoRoomMessageInterval;
         // MessageHud localizes the $token in the item name
-        player.Message(MessageHud.MessageType.Center, $"No room for your {item.m_shared.m_name} - it will return when you free a slot");
+        player.Message(MessageHud.MessageType.Center, $"No room for your {item.m_shared.m_name} - it will return when you free its slot");
     }
 }
