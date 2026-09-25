@@ -13,7 +13,7 @@ public static class PluginConfig
     /// <summary>Prevents other players from auto-picking up thrown spears.</summary>
     public static ConfigEntry<bool> EnableBlockAutoPickup { get; private set; } = null!;
 
-    /// <summary>Seconds until a thrown spear returns to its owner after hitting the ground. 0 or negative disables.</summary>
+    /// <summary>Seconds until a thrown spear returns to its owner after hitting the ground. 0 returns immediately, negative disables returning.</summary>
     public static ConfigEntry<float> ReturnAfterSeconds { get; private set; } = null!;
 
     /// <summary>Skips auto-return if picking the spear back up would overburden the owner.</summary>
@@ -21,6 +21,9 @@ public static class PluginConfig
 
     /// <summary>Counts thrown spear weight as reserved during auto-pickup checks for other items.</summary>
     public static ConfigEntry<bool> ReserveThrowWeight { get; private set; } = null!;
+
+    /// <summary>Keeps enough free inventory slots for thrown spears by blocking auto-pickup of other items.</summary>
+    public static ConfigEntry<bool> ReserveThrowSlot { get; private set; } = null!;
 
     /// <summary>Safety cap so a lost spear doesn't reserve weight forever.</summary>
     public static ConfigEntry<float> MaxReservationSeconds { get; private set; } = null!;
@@ -38,13 +41,16 @@ public static class PluginConfig
             description: "Prevent other players from auto-picking up your thrown spears.", synced: true);
 
         ReturnAfterSeconds = plugin.Config.BindConfig("General", "ReturnAfterSeconds", defaultValue: 5f,
-            description: "Seconds until a thrown spear returns to its owner after hitting the ground. 0 or negative disables.", synced: true);
+            description: "Seconds until a thrown spear returns to its owner after hitting the ground. 0 returns immediately, negative disables returning.", synced: true);
 
         BlockReturnIfOverburdened = plugin.Config.BindConfig("General", "BlockReturnIfOverburdened", defaultValue: false,
             description: "Skip auto-return if picking it back up would overburden the owner.", synced: true);
 
         ReserveThrowWeight = plugin.Config.BindConfig("General", "ReserveThrowWeight", defaultValue: true,
             description: "Count thrown spear weight as reserved during auto-pickup checks.", synced: true);
+
+        ReserveThrowSlot = plugin.Config.BindConfig("General", "ReserveThrowSlot", defaultValue: true,
+            description: "Keep a free inventory slot for each thrown spear by not auto-picking up items that would fill it.", synced: true);
 
         MaxReservationSeconds = plugin.Config.BindConfig("General", "MaxReservationSeconds", defaultValue: 60f,
             description: "Safety cap so a lost spear doesn't reserve weight forever.", synced: true);

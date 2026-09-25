@@ -1,70 +1,95 @@
-using System.Collections;
 using UnityEngine;
 
 namespace LoyalSpears;
 
 /// <summary>
-/// Component attached to a dropped spear item that handles automatic return to the
-/// original owner after a configurable delay. Inherits weight reservation behavior
-/// from <see cref="WeightReserverComponent"/>.
+/// Component attached to a dropped spear that belongs to a player. It keeps trying to return
+/// the spear to its owner until it succeeds, so a full inventory or a teleport only delays the
+/// return instead of cancelling it.
+///
+/// Ownership is stored on the item's ZDO (see <see cref="SpearReturn.OwnerHash"/>), so the
+/// component is re-attached whenever the spear is loaded again — after walking back to it,
+/// after a relog, or after dying and respawning.
 /// </summary>
 internal class LoyaltyComponent : WeightReserverComponent
 {
-    // ask IronGate why death count is a float
-    /// <summary>Death count of the owner at the time the spear was thrown.</summary>
-    private float _ownerDeathCountOnThrow;
+    /// <summary>How often a failed return is retried.</summary>
+    private const float RetryIntervalSeconds = 1f;
 
     /// <summary>The ItemDrop representing the thrown spear.</summary>
     private ItemDrop _attachedItemDrop;
 
+    /// <summary>Time.time at which the next return attempt is made.</summary>
+    private float _nextAttempt;
+
+    /// <summary>The spear this component is bringing back.</summary>
+    public ItemDrop Drop => _attachedItemDrop;
+
     /// <summary>
-    /// Sets up the loyalty component with the item drop, original owner, and death count
-    /// at the time of throwing. Also calls the base Setup to register weight reservation.
+    /// Sets up the loyalty component. The first return attempt happens after
+    /// <see cref="PluginConfig.ReturnAfterSeconds"/>, or after <paramref name="delay"/> if given.
+    /// <paramref name="owner"/> may be null when the owner is not known yet (spear loaded from
+    /// the world); the reservation is then made on the first return attempt.
     /// </summary>
-    public void Setup(ItemDrop attachedItemDrop, Player originalOwner, float ownerDeathCountOnThrow)
+    public void Setup(ItemDrop attachedItemDrop, Player owner, float? delay = null)
     {
         _attachedItemDrop = attachedItemDrop;
-        _ownerDeathCountOnThrow = ownerDeathCountOnThrow;
+        _nextAttempt = Time.time + Mathf.Max(0f, delay ?? PluginConfig.ReturnAfterSeconds.Value);
 
-        base.Setup(attachedItemDrop.m_itemData, originalOwner);
+        if (owner != null && owner != OriginalOwner)
+        {
+            ReserveFor(owner);
+        }
     }
 
-    /// <summary>Starts the coroutine that waits before returning the spear.</summary>
+    /// <summary>A loyal spear reserves weight for as long as it is away, so there is no timeout.</summary>
     protected override void StartTimer()
     {
-        // use string overload because we also use the string overload to potentially stop it:
-        // https://docs.unity3d.com/ScriptReference/MonoBehaviour.StopCoroutine.html
-        StartCoroutine(nameof(ReturnInABit));
     }
 
-    /// <summary>Stops the return coroutine if it is still running.</summary>
+    /// <inheritdoc cref="StartTimer"/>
     public override void StopTimer()
     {
-        StopCoroutine(nameof(ReturnInABit));
     }
 
-    /// <summary>
-    /// Coroutine that waits for <see cref="PluginConfig.ReturnAfterSeconds"/> and then
-    /// invokes the RPC to return the spear to the owner. The death count check prevents
-    /// returning a spear if the owner has died since throwing it.
-    /// </summary>
-    private IEnumerator ReturnInABit()
+    /// <summary>Makes the next <see cref="Update"/> attempt the return straight away.</summary>
+    public void ReturnNow() => _nextAttempt = 0f;
+
+    private void Update()
     {
-        float seconds = PluginConfig.ReturnAfterSeconds.Value;
-
-        if (seconds > 0)
+        if (_attachedItemDrop == null || Time.time < _nextAttempt)
         {
-            yield return new WaitForSeconds(seconds);
+            return;
         }
 
-        if (OriginalOwner != null && _attachedItemDrop != null && _attachedItemDrop.CanPickup())
+        _nextAttempt = Time.time + RetryIntervalSeconds;
+
+        if (PluginConfig.ReturnAfterSeconds.Value < 0f)
         {
-            var playerNview = SpearPatches.GetNview(OriginalOwner);
-            var itemNview = SpearPatches.GetNview(_attachedItemDrop);
-            playerNview.InvokeRPC("RPC_PickupLoyaltySpear", itemNview.GetZDO().m_uid, _ownerDeathCountOnThrow);
+            return;
         }
 
-        // we only try to return once
-        Destroy(this);
+        var player = Player.m_localPlayer;
+
+        if (player == null || !SpearReturn.IsOwnedBy(_attachedItemDrop, player))
+        {
+            return;
+        }
+
+        // the owner may have died and respawned as a new Player object since this was set up
+        if (OriginalOwner != player)
+        {
+            ReserveFor(player);
+        }
+
+        // on success the drop is destroyed, and this component with it
+        SpearReturn.TryReturn(_attachedItemDrop, player);
+    }
+
+    /// <summary>Moves this component's weight/slot reservation onto <paramref name="player"/>.</summary>
+    private void ReserveFor(Player player)
+    {
+        Unregister();
+        base.Setup(_attachedItemDrop.m_itemData, player);
     }
 }

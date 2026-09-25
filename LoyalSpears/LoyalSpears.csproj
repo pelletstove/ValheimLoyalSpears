@@ -16,13 +16,13 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <ValheimDir>/mnt/games/steam/steamapps/common/Valheim/valheim_Data/Managed/</ValheimDir>
-    <DeployPath>/home/jorstar/.config/r2modmanPlus-local/Valheim/profiles/Development/BepInEx/plugins/</DeployPath>
+    <ValheimDir Condition="'$(ValheimDir)' == ''">/mnt/games/steam/steamapps/common/Valheim/valheim_Data/Managed/</ValheimDir>
+    <DeployPath Condition="'$(DeployPath)' == ''">/home/jorstar/.config/r2modmanPlus-local/Valheim/profiles/Development/BepInEx/plugins/</DeployPath>
     <!-- Mod packaging settings -->
     <ModName>LoyalSpears</ModName>
     <ModDescription>Spears that are loyal - return on throw and do not get picked up by others.</ModDescription>
     <ModWebsiteUrl>https://github.com/jorstar/ValheimLoyalSpears</ModWebsiteUrl>
-    <ModVersion>1.0.0</ModVersion>
+    <ModVersion>1.1.0</ModVersion>
     <ModDependencies>denikson-BepInExPack_Valheim-5.4.2350,ValheimModding-Jotunn-2.30.2</ModDependencies>
   </PropertyGroup>
 
@@ -70,13 +70,13 @@
   </ItemGroup>
 
   <!-- Deploy to r2modman Development profile -->
-  <Target Name="Deploy" AfterTargets="Build">
+  <Target Name="Deploy" AfterTargets="Build" Condition="Exists('$(DeployPath)')">
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(DeployPath)" />
     <Message Text="Deployed $(ModName).dll to $(DeployPath)" Importance="High" />
   </Target>
 
   <!-- Generate manifest.json and package mod as zip -->
-  <Target Name="PackageMod" AfterTargets="Build">
+  <Target Name="PackageMod" AfterTargets="Build" Condition="'$(SkipPackage)' != 'true'">
     <Exec Command="bash $(MSBuildThisFileDirectory)../build/pack_mod.sh &quot;$(OutputPath)&quot; &quot;$(TargetPath)&quot; &quot;$(MSBuildThisFileDirectory)..&quot; &quot;$(ModName)&quot; &quot;$(ModVersion)&quot; &quot;$(ModWebsiteUrl)&quot; &quot;$(ModDescription)&quot; &quot;$(ModDependencies)&quot;" />
   </Target>
 

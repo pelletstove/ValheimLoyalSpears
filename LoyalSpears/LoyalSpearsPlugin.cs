@@ -19,7 +19,7 @@ internal class LoyalSpearsPlugin : BaseUnityPlugin
     private const string Name = "Loyal Spears";
 
     /// <summary>Version of this mod.</summary>
-    private const string Version = "1.0.0";
+    private const string Version = "1.1.0";
 
     private void Awake()
     {

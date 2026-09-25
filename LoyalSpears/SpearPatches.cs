@@ -21,6 +21,7 @@ internal class SpearPatches
     private static readonly FieldInfo FieldPlayerProfile = AccessTools.Field(typeof(Game), "m_playerProfile");
     private static readonly FieldInfo FieldItemNview = AccessTools.Field(typeof(ItemDrop), "m_nview");
     private static readonly FieldInfo FieldSpawnItem = AccessTools.Field(typeof(Projectile), "m_spawnItem");
+    private static readonly FieldInfo FieldProjectileNview = AccessTools.Field(typeof(Projectile), "m_nview");
 
     /// <summary>
     /// Checks whether the given item is a spear (skill type is Spears).
@@ -99,75 +100,11 @@ internal class SpearPatches
     /// <summary>Gets the spawned ItemData from a Projectile using reflection.</summary>
     public static ItemDrop.ItemData GetSpawnItem(Projectile projectile) => (ItemDrop.ItemData)FieldSpawnItem.GetValue(projectile);
 
-    /// <summary>
-    /// Retrieves the local player's death count from the player profile.
-    /// </summary>
-    public static float GetPlayerDeathCount()
-    {
-        var profile = GetPlayerProfile(Game.instance);
-        return profile.m_playerStats[0].m_stats[PlayerStatType.Deaths];
-    }
+    /// <summary>Sets the spawned ItemData of a Projectile using reflection.</summary>
+    public static void SetSpawnItem(Projectile projectile, ItemDrop.ItemData item) => FieldSpawnItem.SetValue(projectile, item);
 
-    /// <summary>
-    /// Registers the <c>RPC_PickupLoyaltySpear</c> RPC on player objects during Awake.
-    /// </summary>
-    [HarmonyPatch(typeof(Player), "Awake"), HarmonyPostfix]
-    private static void AddLoyaltySpearRPC(Player __instance)
-    {
-        var nview = GetNview(__instance);
-        nview.Register<ZDOID, float>("RPC_PickupLoyaltySpear",
-            (player, item, deaths) => RPC_PickupLoyaltySpear(__instance, item, deaths));
-    }
-
-    /// <summary>
-    /// Handles the RPC call that returns a spear to its owner.
-    /// Validates inventory space, weight capacity, and death count before picking up.
-    /// </summary>
-    private static void RPC_PickupLoyaltySpear(Player player, ZDOID item, float deathCountOnThrow)
-    {
-        var instance = ZNetScene.instance.FindInstance(item);
-
-        if (instance == null)
-        {
-            return;
-        }
-
-        var itemDrop = instance.GetComponent<ItemDrop>();
-
-        if (itemDrop == null)
-        {
-            return;
-        }
-
-        var inventory = GetInventory(player);
-
-        if (!inventory.CanAddItem(itemDrop.m_itemData))
-        {
-            return;
-        }
-
-        if (PluginConfig.BlockReturnIfOverburdened.Value)
-        {
-            if (itemDrop.m_itemData.GetWeight() + inventory.GetTotalWeight() > player.GetMaxCarryWeight())
-            {
-                return;
-            }
-        }
-
-        if (deathCountOnThrow >= 0)
-        {
-            float currentDeathCount = GetPlayerDeathCount();
-
-            // if you die before picking up your spear, the death count check prevents it
-            // from teleporting across dimensions back into your inventory
-            if (currentDeathCount > deathCountOnThrow)
-            {
-                return;
-            }
-        }
-
-        itemDrop.Pickup(player);
-    }
+    /// <summary>Gets the ZNetView from a Projectile using reflection.</summary>
+    public static ZNetView GetNview(Projectile projectile) => (ZNetView)FieldProjectileNview.GetValue(projectile);
 
     /// <summary>
     /// Adds a LoyaltyComponent or WeightReserverComponent to a dropped spear item
@@ -179,20 +116,16 @@ internal class SpearPatches
 
         if (owner is Player player && player == Player.m_localPlayer && item != null && IsPotentiallyThrowable(item.m_itemData))
         {
+            if (IsSpear(item.m_itemData))
+            {
+                // the drop now holds the spear; clearing it stops the projectile dropping a second
+                // copy, and stops the destroy rescue below from returning one
+                SetSpawnItem(projectile, null);
+            }
+
             if (IsSpear(item.m_itemData) && PluginConfig.ReturnAfterSeconds.Value >= 0f)
             {
-                if (item.gameObject.TryGetComponent<LoyaltyComponent>(out var loyalty))
-                {
-                    loyalty.StopTimer();
-                }
-                else
-                {
-                    loyalty = item.gameObject.AddComponent<LoyaltyComponent>();
-                }
-
-                float deathCount = GetPlayerDeathCount();
-
-                loyalty.Setup(item, player, deathCount);
+                SpearReturn.MakeLoyal(item, player);
             }
             else if (PluginConfig.ReserveThrowWeight.Value && PluginConfig.MaxReservationSeconds.Value >= 0f)
             {
@@ -210,6 +143,51 @@ internal class SpearPatches
         }
 
         return item;
+    }
+
+    /// <summary>
+    /// Postfix on <see cref="ItemDrop"/> Awake: a spear that was thrown earlier and is loaded
+    /// again (walked back into range, relogged, respawned) picks up where it left off.
+    /// </summary>
+    [HarmonyPatch(typeof(ItemDrop), "Awake"), HarmonyPostfix]
+    private static void ItemDrop_Awake_Postfix(ItemDrop __instance)
+    {
+        if (PluginConfig.ReturnAfterSeconds.Value < 0f || SpearReturn.GetOwnerId(__instance) == 0L)
+        {
+            return;
+        }
+
+        // the owner is checked on each attempt, since the local player may not exist yet
+        SpearReturn.AttachLoyalty(__instance, owner: null);
+    }
+
+    /// <summary>
+    /// Prefix on <see cref="ZNetScene.Destroy"/>: a spear projectile destroyed while still
+    /// carrying its spear — its lifetime ran out flying into the sky, or it hit something vanilla
+    /// does not drop items on — would take the spear with it. Return it to the owner instead.
+    /// A projectile that already dropped its spear has it cleared, so this does nothing then.
+    /// </summary>
+    [HarmonyPatch(typeof(ZNetScene), nameof(ZNetScene.Destroy)), HarmonyPrefix]
+    private static void ZNetScene_Destroy_Prefix(GameObject go)
+    {
+        if (go == null || !go.TryGetComponent<Projectile>(out var projectile))
+        {
+            return;
+        }
+
+        if (PluginConfig.ReturnAfterSeconds.Value < 0f || GetProjectileOwner(projectile) is not Player player || player != Player.m_localPlayer)
+        {
+            return;
+        }
+
+        var nview = GetNview(projectile);
+
+        if (nview == null || !nview.IsValid() || !nview.IsOwner())
+        {
+            return;
+        }
+
+        SpearReturn.RecallProjectile(projectile, player, destroyProjectile: false);
     }
 
     /// <summary>
@@ -291,15 +269,9 @@ internal class SpearPatches
         Vector3 v = player.transform.position - __instance.transform.position;
         float distSq = v.sqrMagnitude;
 
-        if (distSq > autoReturnDistance * autoReturnDistance)
+        if (distSq > autoReturnDistance * autoReturnDistance && player == Player.m_localPlayer)
         {
-            var itemDrop = ItemDrop.DropItem(item, 0, __instance.transform.position, __instance.transform.rotation);
-            var itemNview = GetNview(itemDrop);
-
-            var playerNview = GetNview(player);
-            playerNview.InvokeRPC("RPC_PickupLoyaltySpear", itemNview.GetZDO().m_uid, -1f);
-            FieldSpawnItem.SetValue(__instance, null);
-            ZNetScene.instance.Destroy(__instance.gameObject);
+            SpearReturn.RecallProjectile(__instance, (Player)player, destroyProjectile: true);
         }
     }
 
@@ -348,11 +320,57 @@ internal class SpearPatches
 
         if (IsPotentiallyThrowable(itemDrop.m_itemData))
         {
+            long ownerId = SpearReturn.GetOwnerId(itemDrop);
+
+            // a loyal spear: only its thrower may pick it up, even after the ZDO changed hands
+            if (ownerId != 0L)
+            {
+                return !PluginConfig.EnableBlockAutoPickup.Value || ownerId == player.GetPlayerID();
+            }
+
             var nview = GetNview(itemDrop);
             return !(nview != null && !nview.IsOwner());
         }
 
-        return !BlockAutoPickupDueToReservedWeight(itemDrop, player);
+        return !BlockAutoPickupDueToReservedWeight(itemDrop, player) && !BlockAutoPickupDueToReservedSlot(itemDrop, player);
+    }
+
+    /// <summary>
+    /// Checks if auto-pickup of an item should be blocked because it would take the last free
+    /// inventory slot(s) that thrown spears still need to come back into.
+    /// </summary>
+    private static bool BlockAutoPickupDueToReservedSlot(ItemDrop itemDrop, Player player)
+    {
+        if (!PluginConfig.ReserveThrowSlot.Value || !player.TryGetComponent<PlayerWeightReserverTrackerComponent>(out var tracker))
+        {
+            return false;
+        }
+
+        int slotsToReserve = 0;
+
+        foreach (var reserver in tracker.WeightReservers)
+        {
+            if (reserver != null && reserver.AttachedItemData != null)
+            {
+                slotsToReserve++;
+            }
+        }
+
+        if (slotsToReserve == 0)
+        {
+            return false;
+        }
+
+        var inventory = GetInventory(player);
+        var item = itemDrop.m_itemData;
+
+        // fits entirely onto existing stacks, so it needs no new slot
+        if (inventory.FindFreeStackSpace(item.m_shared.m_name, item.m_worldLevel) >= item.m_stack)
+        {
+            return false;
+        }
+
+        return inventory.GetEmptySlots() <= slotsToReserve;
     }
 
     /// <summary>
@@ -394,74 +412,34 @@ internal class SpearPatches
     }
 
     /// <summary>
-    /// Portal safety: when a player teleports (goes through a portal), cleans up
-    /// loyalty and weight-reserver components on active projectiles to prevent
-    /// spears from getting stuck in another dimension trying to return to the player.
+    /// Portal and cave safety: just before the player teleports (portal, dungeon entrance or
+    /// exit), pull every thrown spear back while it is still loaded. Once the player is gone
+    /// the spear's area unloads, and before this a spear left behind was simply lost.
+    /// Anything that cannot come back now (no room) stays a loyal spear on the ground and
+    /// returns the next time it is loaded.
     /// </summary>
-    [HarmonyPatch(typeof(Player), "TeleportTo"), HarmonyPostfix]
-    private static void TeleportTo_Postfix(Player __instance)
+    [HarmonyPatch(typeof(Player), "TeleportTo"), HarmonyPrefix]
+    private static void TeleportTo_Prefix(Player __instance)
     {
-        if (__instance != Player.m_localPlayer)
+        if (__instance != Player.m_localPlayer || __instance.IsTeleporting() || PluginConfig.ReturnAfterSeconds.Value < 0f)
         {
             return;
         }
 
-        var projectiles = Object.FindObjectsByType<Projectile>(FindObjectsSortMode.None);
-        foreach (var proj in projectiles)
-        {
-            var owner = GetProjectileOwner(proj);
-            if (owner is Player p && p == __instance)
-            {
-                var loyalty = proj.GetComponent<LoyaltyComponent>();
-                if (loyalty != null)
-                {
-                    Object.Destroy(loyalty);
-                }
-
-                var reserver = proj.GetComponent<WeightReserverComponent>();
-                if (reserver != null)
-                {
-                    Object.Destroy(reserver);
-                }
-            }
-        }
-
-        // Also clean up any LoyaltyComponents that might try to return spears across dimensions
-        var loyaltyComponents = Object.FindObjectsByType<LoyaltyComponent>(FindObjectsSortMode.None);
-        foreach (var loyalty in loyaltyComponents)
-        {
-            if (loyalty.OriginalOwner == __instance)
-            {
-                Object.Destroy(loyalty);
-            }
-        }
+        SpearReturn.RecallAll(__instance);
     }
 
     /// <summary>
-    /// Safety cleanup when the player object is destroyed, removing all
-    /// loyalty and weight-reserver components associated with the player.
+    /// Cleanup when the player object is destroyed (death, logout): releases plain weight
+    /// reservations. Loyal spears are kept; they find the owner again by player ID.
     /// </summary>
     [HarmonyPatch(typeof(Player), "OnDestroy"), HarmonyPostfix]
     private static void OnDestroy_Postfix(Player __instance)
     {
-        if (__instance != Player.m_localPlayer)
-        {
-            return;
-        }
-
-        var loyaltyComponents = Object.FindObjectsByType<LoyaltyComponent>(FindObjectsSortMode.None);
-        foreach (var loyalty in loyaltyComponents)
-        {
-            if (loyalty.OriginalOwner == __instance)
-            {
-                Object.Destroy(loyalty);
-            }
-        }
-
         var reserverComponents = Object.FindObjectsByType<WeightReserverComponent>(FindObjectsSortMode.None);
         foreach (var reserver in reserverComponents)
         {
-            if (reserver.OriginalOwner == __instance)
+            if (reserver is not LoyaltyComponent && reserver.OriginalOwner == __instance)
             {
                 Object.Destroy(reserver);
             }

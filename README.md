@@ -8,8 +8,11 @@ This is a Valheim 1.0+ port of the original [Loyal Spears](https://github.com/Go
 
 - **Auto-Return**: Thrown spears automatically return to their owner after landing, or after traveling too far.
 - **Owner-Only Pickup**: Prevent other players from auto-picking up your thrown spears.
-- **Weight Reservation**: Throws reserve a portion of your carrying capacity so you don't accidentally overburden yourself picking up loot before retrieving your spear.
-- **Portal Safety**: Spear tracking components are cleaned up when teleporting through portals, preventing spears from getting stuck across dimensions.
+- **Never Lost**: A spear that can't come back yet (inventory full, mid-teleport) keeps retrying instead of giving up. Its owner is stored on the item itself, so it also comes back after you walk back into range, relog, or die and respawn.
+- **Original Slot**: A returning spear goes back to the inventory slot it was thrown from if that slot is still free, otherwise to any free slot.
+- **Weight and Slot Reservation**: Throws reserve carrying capacity and an inventory slot, so auto-pickup of loot can't overburden you or fill the slot your spear needs.
+- **Portal and Cave Safety**: Entering a portal or a dungeon/cave entrance pulls your thrown spears back first, while they are still loaded.
+- **Lifetime Rescue**: A spear that flies until it expires (or hits something vanilla won't drop it on) is returned instead of vanishing.
 
 ## Installation
 
@@ -31,9 +34,10 @@ All settings are server-synced. The server's configuration is authoritative.
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `EnableBlockAutoPickup` | bool | `true` | Prevent other players from auto-picking up your thrown spears. |
-| `ReturnAfterSeconds` | float | `5` | Seconds until a thrown spear returns to its owner after hitting the ground. `0` or negative disables. |
+| `ReturnAfterSeconds` | float | `5` | Seconds until a thrown spear returns to its owner after hitting the ground. `0` returns immediately, negative disables returning. |
 | `BlockReturnIfOverburdened` | bool | `false` | Skip auto-return if picking it back up would overburden the owner. |
 | `ReserveThrowWeight` | bool | `true` | Count thrown spear weight as reserved during auto-pickup checks. |
+| `ReserveThrowSlot` | bool | `true` | Keep a free inventory slot for each thrown spear by not auto-picking up items that would fill it. |
 | `MaxReservationSeconds` | float | `60` | Safety cap so a lost spear doesn't reserve weight forever. |
 | `FlightDistanceUntilAutoReturn` | float | `-1` | If a thrown spear travels further than this distance from the owner without hitting the ground, it auto-returns. Negative disables. |
 

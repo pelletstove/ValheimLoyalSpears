@@ -44,7 +44,10 @@ internal class WeightReserverComponent : MonoBehaviour
             playerWeightReserverTracker = originalOwner.gameObject.AddComponent<PlayerWeightReserverTrackerComponent>();
         }
 
-        playerWeightReserverTracker.WeightReservers.Add(this);
+        if (!playerWeightReserverTracker.WeightReservers.Contains(this))
+        {
+            playerWeightReserverTracker.WeightReservers.Add(this);
+        }
 
         StartTimer();
     }
@@ -79,14 +82,21 @@ internal class WeightReserverComponent : MonoBehaviour
         Destroy(this);
     }
 
+    /// <summary>Removes this component from the owner's tracker.</summary>
+    protected void Unregister()
+    {
+        // the owner may already be destroyed (death, logout), which compares == null
+        if (_originalOwner != null && _originalOwner.TryGetComponent<PlayerWeightReserverTrackerComponent>(out var playerWeightReserverTracker))
+        {
+            playerWeightReserverTracker.WeightReservers.Remove(this);
+        }
+    }
+
     /// <summary>
     /// Removes this component from the owner's tracker when destroyed.
     /// </summary>
     public void OnDestroy()
     {
-        if (_originalOwner.TryGetComponent<PlayerWeightReserverTrackerComponent>(out var playerWeightReserverTracker))
-        {
-            playerWeightReserverTracker.WeightReservers.Remove(this);
-        }
+        Unregister();
     }
 }
